@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from pybaseball import pitching_stats, batting_stats, pitching_stats_range, batting_stats_range
 from datetime import datetime, timedelta
+import requests
 
 # --- Season and Timeframe Dropdown ---
 season_options = ["2025", "2024", "2023", "Last Week", "Last 2 Weeks", "Last Month"]
@@ -28,7 +29,26 @@ else:
     pitcher_dat = pitching_stats_range(start_str, end_str)
     hitter_dat = batting_stats_range(start_str, end_str)
 
-pitcher_positions = pd.read_csv("pitcher_positions.csv")
+url_pitch_positions = "https://razzball.com/mlbpitchingstats/"
+
+# Fetch the page content with headers to avoid 403
+headers_pitchers = {"User-Agent": "Mozilla/5.0"}
+response_pitchers = requests.get(url_pitch_positions, headers=headers_pitchers)
+response_pitchers.raise_for_status()
+
+# Read all tables from the HTML content
+tables_pitchers = pd.read_html(response_pitchers.text)
+
+print(f"Found {len(tables_pitchers)} tables")
+
+# Take the first table (or whichever you want)
+df_pitchers  = tables_pitchers[0]
+
+# Select columns 2-4 (python indexing: 1 to 3 inclusive)
+df_pitchers_selected = df_pitchers.iloc[:, 1:4]
+
+# Drop rows with index 2, 3, 4
+pitcher_positions = df_pitchers_selected.drop(index=[0, 1, 2]).reset_index(drop=True)
 pitcher_positions.rename(columns={'ESPN': 'Pos'}, inplace=True)
 
 # Changes to pitcher_dat
@@ -99,7 +119,9 @@ name_replacements_pitcher = {
 pitcher_positions['Name'] = pitcher_positions['Name'].replace(name_replacements_pitcher)
 
 pitcher_data = pd.merge(pitcher_dat, pitcher_positions[['Name', 'Team', 'Pos']], on = ['Name', 'Team'], how = 'left')
-
+pitcher_dat.to_csv(r"C:\Users\dmuin\Downloads\pythoncode\raw.csv")
+pitcher_positions.to_csv(r"C:\Users\dmuin\Downloads\pythoncode\test.csv")
+pitcher_data.to_csv(r"C:\Users\dmuin\Downloads\pythoncode\diw.csv")
 
 #Replace Teams: WSH with WSN, CWS with CHW, TB with TBR, SD with SDP, SF with SFG, KC with KCR, 
 #Replace Ben Williamson with Benjamin Williamson, Bobby Witt with Bobby Witt Jr., CJ Alexander with C.J. Alexander
@@ -107,7 +129,28 @@ pitcher_data = pd.merge(pitcher_dat, pitcher_positions[['Name', 'Team', 'Pos']],
 #Replace Lourdes Gurriel with Lourdes Gurriel Jr., Michael Harris with Michael Harris II, Nick Kurtz with Nicholas Kurtz
 #Replace Ronald Acuna with Ronald Acuna Jr., Victor Scott with Victor Scott II, Vladimir Guerrero with Vladimir Guerrero Jr., 
 #Replace Vladimir Guerrero with Vladimir Guerrero Jr., Zach Dezenzo with Zachary Dezenzo
-hitter_positions = pd.read_csv("hitter_positions.csv")
+url_hit_positions = "https://razzball.com/mlbhittingstats/"
+
+# Fetch the page content with headers to avoid 403
+headers_hitter = {"User-Agent": "Mozilla/5.0"}
+response_hitter = requests.get(url_hit_positions, headers=headers_hitter)
+response_hitter.raise_for_status()
+
+# Read all tables from the HTML content
+hitter_tables = pd.read_html(response_hitter.text)
+
+print(f"Found {len(hitter_tables)} tables")
+
+# Take the first table (or whichever you want)
+df_hitter = hitter_tables[0]
+
+# Select columns 2-4 (python indexing: 1 to 3 inclusive)
+df_hitter_selected = df_hitter.iloc[:, 1:4]
+
+# Drop rows with index 2, 3, 4
+hitter_positions = df_hitter_selected.drop(index=[0, 1, 2]).reset_index(drop=True)
+hitter_positions.rename(columns={'ESPN': 'Pos'}, inplace=True)
+
 name_mistakes_hitter = {
     'Jack WInkler': 'Jack Winkler',
 
@@ -328,11 +371,11 @@ with tab2:
     st.subheader("🏆 Top 100 Hitters (Z-Score Rankings)")
 
     hitter_positions = hitter_z_scores_ranked['Pos'].dropna().unique()
-    selected_hitter_pos = st.selectbox("Filter Hitters by Position:", ['All'] + sorted(hitter_positions), key='hitter_pos_filter')
+    selected_hitter_pos = st.selectbox("Filter Hitters by Position:", ['All', 'C', '1B', '2B', 'SS', '3B', 'OF', 'DH'], key='hitter_pos_filter')
 
     if selected_hitter_pos != 'All':
-        filtered_hitters = hitter_z_scores_ranked[hitter_z_scores_ranked['Pos'] == selected_hitter_pos].head(100)
-        filtered_hitters_raw = sortedrank_hitter_data[sortedrank_hitter_data['Pos'] == selected_hitter_pos].head(100)
+        filtered_hitters = hitter_z_scores_ranked[hitter_z_scores_ranked['Pos'].str.contains(selected_hitter_pos, case=False, na=False)].head(100)
+        filtered_hitters_raw = sortedrank_hitter_data[sortedrank_hitter_data['Pos'].str.contains(selected_hitter_pos, case=False, na=False)].head(100)
     else:
         filtered_hitters = hitter_z_scores_ranked.head(100)
         filtered_hitters_raw = sortedrank_hitter_data.head(100)
