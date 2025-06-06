@@ -190,10 +190,6 @@ hitter_z_scores['Total Z-Score'] = hitter_z_scores[hitter_numeric_columns].sum(a
 # --- Rank and Save ---
 pitcher_z_scores_ranked = pitcher_z_scores.sort_values(by='Total Z-Score', ascending=False)
 hitter_z_scores_ranked = hitter_z_scores.sort_values(by='Total Z-Score', ascending=False)
-pitcher_z_scores_ranked.to_csv("pitcher_z_scores.csv", index=False)
-hitter_z_scores_ranked.to_csv("hitter_z_scores.csv", index=False)
-pitcher_z_scores_ranked = pd.read_csv("pitcher_z_scores.csv")
-hitter_z_scores_ranked = pd.read_csv("hitter_z_scores.csv")
 pitcher_z_scores_ranked.insert(0, "Rank", pitcher_z_scores_ranked.index + 1)
 hitter_z_scores_ranked.insert(0, "Rank", hitter_z_scores_ranked.index + 1)
 rank_hitter_data = pd.merge(hitter_data, hitter_z_scores_ranked[['Name', 'Team', 'Rank']], on = ['Name', 'Team'], how='left')
