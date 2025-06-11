@@ -118,10 +118,39 @@ name_replacements_pitcher = {
 
 pitcher_positions['Name'] = pitcher_positions['Name'].replace(name_replacements_pitcher)
 
-pitcher_data = pd.merge(pitcher_dat, pitcher_positions[['Name', 'Team', 'Pos']], on = ['Name', 'Team'], how = 'left')
-pitcher_dat.to_csv(r"C:\Users\dmuin\Downloads\pythoncode\raw.csv")
-pitcher_positions.to_csv(r"C:\Users\dmuin\Downloads\pythoncode\test.csv")
-pitcher_data.to_csv(r"C:\Users\dmuin\Downloads\pythoncode\diw.csv")
+pitcher_datas = pd.merge(pitcher_dat, pitcher_positions[['Name', 'Team', 'Pos']], on = ['Name', 'Team'], how = 'left')
+
+#Fantasy Team Name
+from espn_api.baseball import League
+league = League(league_id=1137779476, year=2025)
+
+all_players = []
+
+for team in league.teams:
+    for player in team.roster:
+        all_players.append({
+            "Fantasy Team": team.team_name,
+            "Name": player.name,
+            "Pos": player.position,
+            "Team": player.proTeam  # This is their real-life team, like "LAD", "NYY", etc.
+        })
+
+# Create DataFrame
+rosters_df = pd.DataFrame(all_players)
+rosters_df['Team'] = rosters_df['Team'].str.upper()
+
+fantasy_team_replacements = {
+    'OAK': 'ATH',
+    'TB': 'TBR',
+    'SD': 'SDP',
+    'SF': 'SFG',
+    'KC': 'KCR',
+    'WSH': 'WSN',
+}
+
+rosters_df['Team'] = rosters_df['Team'].replace(fantasy_team_replacements)
+
+pitcher_data = pd.merge(pitcher_datas, rosters_df[['Fantasy Team', 'Name', 'Team']], on = ['Name', 'Team'], how = 'left')
 
 #Replace Teams: WSH with WSN, CWS with CHW, TB with TBR, SD with SDP, SF with SFG, KC with KCR, 
 #Replace Ben Williamson with Benjamin Williamson, Bobby Witt with Bobby Witt Jr., CJ Alexander with C.J. Alexander
@@ -138,7 +167,7 @@ response_hitter.raise_for_status()
 
 # Read all tables from the HTML content
 hitter_tables = pd.read_html(response_hitter.text)
-
+##Scrape only positions
 print(f"Found {len(hitter_tables)} tables")
 
 # Take the first table (or whichever you want)
@@ -191,15 +220,17 @@ name_replacements_hitter = {
 
 hitter_positions['Name'] = hitter_positions['Name'].replace(name_replacements_hitter)
 
-hitter_data = pd.merge(hitter_dat, hitter_positions[['Name', 'Team', 'Pos']], on = ['Name', 'Team'], how = 'left')
-hitter_data.rename(columns={'Pos_y': 'Pos'}, inplace=True)
+hitter_datas = pd.merge(hitter_dat, hitter_positions[['Name', 'Team', 'Pos']], on = ['Name', 'Team'], how = 'left')
+hitter_datas.rename(columns={'Pos_y': 'Pos'}, inplace=True)
+
+hitter_data = pd.merge(hitter_datas, rosters_df[['Fantasy Team', 'Name', 'Team']], on = ['Name', 'Team'], how = 'left')
 
 # --- Pitcher Z-Scores ---
-pitcher_categories = ['Name','Team', 'Pos', 'W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD','IP']
+pitcher_categories = ['Fantasy Team', 'Name','Team', 'Pos', 'IP', 'W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']
 pitcher_data_categories = pitcher_data[pitcher_categories]
 pitcher_data_filtered = pitcher_data_categories[pitcher_data_categories['IP'] > 0]
-pitcher_stats_mean = pitcher_data_filtered.drop(columns=['Name','Team', 'Pos',]).mean()
-pitcher_stats_std = pitcher_data_filtered.drop(columns=['Name','Team', 'Pos',]).std()
+pitcher_stats_mean = pitcher_data_filtered.drop(columns=['Fantasy Team', 'Name','Team', 'Pos',]).mean()
+pitcher_stats_std = pitcher_data_filtered.drop(columns=['Fantasy Team', 'Name','Team', 'Pos',]).std()
 pitcher_numeric_columns = ['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']
 pitcher_z_scores = (pitcher_data_filtered[pitcher_numeric_columns] - pitcher_stats_mean[pitcher_numeric_columns]) / pitcher_stats_std[pitcher_numeric_columns]
 pitcher_data_filtered['Weighted_ERA'] = (pitcher_data_filtered['ERA'] - pitcher_stats_mean['ERA']) / (pitcher_stats_std['ERA'] / (pitcher_data_filtered['IP'] ** 0.5))
@@ -208,23 +239,26 @@ pitcher_data_filtered['Weighted_WHIP'] = (pitcher_data_filtered['WHIP'] - pitche
 pitcher_z_scores['WHIP'] = (pitcher_data_filtered['Weighted_WHIP'] - pitcher_data_filtered['Weighted_WHIP'] .mean()) / pitcher_data_filtered['Weighted_WHIP'] .std()
 pitcher_z_scores['ERA'] *= -1
 pitcher_z_scores['WHIP'] *= -1
-pitcher_z_scores.insert(0, 'Name', pitcher_data_filtered['Name'])
-pitcher_z_scores.insert(1, 'Team', pitcher_data_filtered['Team'])
-pitcher_z_scores.insert(2, 'Pos', pitcher_data_filtered['Pos'])
-
+pitcher_z_scores.insert(0, 'Fantasy Team', pitcher_data_filtered['Fantasy Team'])
+pitcher_z_scores.insert(1, 'Name', pitcher_data_filtered['Name'])
+pitcher_z_scores.insert(2, 'Team', pitcher_data_filtered['Team'])
+pitcher_z_scores.insert(3, 'Pos', pitcher_data_filtered['Pos'])
+pitcher_z_scores.insert(4, 'IP', pitcher_data_filtered['IP'])
 # --- Hitter Z-Scores ---
-hitter_categories = ['Name','Team', 'Pos', 'R', 'HR', 'RBI', 'SB', 'AVG', 'PA']
+hitter_categories = ['Fantasy Team', 'Name','Team', 'Pos', 'AB', 'R', 'HR', 'RBI', 'SB', 'AVG', 'PA']
 hitter_data_categories = hitter_data[hitter_categories]
 hitter_data_filtered = hitter_data_categories[hitter_data_categories['PA'] > 0]
-hitter_stats_mean = hitter_data_filtered.drop(columns=['Name','Team', 'Pos']).mean()
-hitter_stats_std = hitter_data_filtered.drop(columns=['Name','Team', 'Pos']).std()
+hitter_stats_mean = hitter_data_filtered.drop(columns=['Fantasy Team', 'Name','Team', 'Pos']).mean()
+hitter_stats_std = hitter_data_filtered.drop(columns=['Fantasy Team', 'Name','Team', 'Pos']).std()
 hitter_numeric_columns = ['R', 'HR', 'RBI', 'SB', 'AVG']
 hitter_z_scores = (hitter_data_filtered[hitter_numeric_columns] - hitter_stats_mean[hitter_numeric_columns]) / hitter_stats_std[hitter_numeric_columns]
 hitter_data_filtered['Weighted_AVG'] = (hitter_data_filtered['AVG'] - hitter_stats_mean['AVG']) / (hitter_stats_std['AVG'] / (hitter_data_filtered['PA'] ** 0.5))
 hitter_z_scores['AVG'] = (hitter_data_filtered['Weighted_AVG'] - hitter_data_filtered['Weighted_AVG'] .mean()) / hitter_data_filtered['Weighted_AVG'] .std()
-hitter_z_scores.insert(0, 'Name', hitter_data_filtered['Name'])
-hitter_z_scores.insert(1, 'Team', hitter_data_filtered['Team'])
-hitter_z_scores.insert(2, 'Pos', hitter_data_filtered['Pos'])
+hitter_z_scores.insert(0, 'Fantasy Team', hitter_data_filtered['Fantasy Team'])
+hitter_z_scores.insert(1, 'Name', hitter_data_filtered['Name'])
+hitter_z_scores.insert(2, 'Team', hitter_data_filtered['Team'])
+hitter_z_scores.insert(3, 'Pos', hitter_data_filtered['Pos'])
+hitter_z_scores.insert(4, 'AB', hitter_data_filtered['AB'])
 
 # --- Total Z-Scores ---
 pitcher_z_scores['Total Z-Score'] = pitcher_z_scores[pitcher_numeric_columns].sum(axis=1)
@@ -233,6 +267,8 @@ hitter_z_scores['Total Z-Score'] = hitter_z_scores[hitter_numeric_columns].sum(a
 # --- Rank and Save ---
 pitcher_z_scores_ranked = pitcher_z_scores.sort_values(by='Total Z-Score', ascending=False)
 hitter_z_scores_ranked = hitter_z_scores.sort_values(by='Total Z-Score', ascending=False)
+pitcher_z_scores_ranked.reset_index(drop=True, inplace=True)
+hitter_z_scores_ranked.reset_index(drop=True, inplace=True)
 pitcher_z_scores_ranked.insert(0, "Rank", pitcher_z_scores_ranked.index + 1)
 hitter_z_scores_ranked.insert(0, "Rank", hitter_z_scores_ranked.index + 1)
 rank_hitter_data = pd.merge(hitter_data, hitter_z_scores_ranked[['Name', 'Team', 'Rank']], on = ['Name', 'Team'], how='left')
@@ -242,8 +278,8 @@ sortedrank_pitcher_data = rank_pitcher_data.sort_values(by='Rank', ascending=Tru
 
 # --- Streamlit UI ---
 st.title("Baseball Player Z-Score Rankings")
-stat_type = st.sidebar.radio("Select Stat Type", ["Raw Stats", "Z-Scores"])
-tab1, tab2, tab3, tab4 = st.tabs(["🔍 Player Lookup", "🏆 Top 100 Players", "📊 Team Overview", "🎮 Fantasy Team"])
+stat_type = st.sidebar.radio("Select Stat Type", ["Z-Scores", "Raw Stats"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🔍 Player Lookup", "🏆 Top 100 Players", "📊 Team Overview", "🎮 Fantasy Team", "🏅 Beisbol Fantasy Teams", "📈 Beisbol Rankings"])
 
 import math  # for math.isnan
 
@@ -284,16 +320,19 @@ with tab1:
 
         if stat_type == "Z-Scores":
             zscore_cols = ['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']
-            df_to_show = player_stats[['Rank','Name', 'Pos', 'Team'] + zscore_cols + ['Total Z-Score']]
-            styled_df = df_to_show.style.applymap(color_z_scores, subset=zscore_cols)
-            st.dataframe(styled_df, hide_index=True)
+            df_to_show = player_stats[['Rank','Name', 'Pos', 'Team', 'IP'] + zscore_cols + ['Total Z-Score']]
+            styled_df = df_to_show.style.applymap(color_z_scores, subset=zscore_cols).format({
+                "IP": "{:.0f}",
+            })
+            st.dataframe(styled_df, hide_index=True, use_container_width=True)
         else:
             raw_player_stats = sortedrank_pitcher_data[sortedrank_pitcher_data['Name'] == selected_player]
-            st.dataframe(raw_player_stats[['Rank','Name', 'Pos', 'Team', 'W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']].style.format({
+            st.dataframe(raw_player_stats[['Rank','Name', 'Pos', 'Team', 'IP', 'W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']].style.format({
+                "IP": "{:.0f}",
                 "ERA": "{:.2f}",
                 "WHIP": "{:.2f}"
             }), 
-            hide_index=True)
+            hide_index=True, use_container_width=True)
     else:
         teams = hitter_z_scores_ranked["Team"].unique()
         selected_team = st.sidebar.selectbox("Select a Team", teams)
@@ -303,45 +342,16 @@ with tab1:
         st.write(f"### Z-Scores for {selected_player}")
         if stat_type == "Z-Scores":
             zscore_cols = ['R', 'HR', 'RBI', 'SB', 'AVG']
-            df_to_show = player_stats[['Rank', 'Name', 'Pos', 'Team'] + zscore_cols + ['Total Z-Score']]
+            df_to_show = player_stats[['Rank', 'Name', 'Pos', 'Team', 'AB'] + zscore_cols + ['Total Z-Score']]
             styled_df = df_to_show.style.applymap(color_z_scores, subset=zscore_cols)
-            st.dataframe(styled_df, hide_index=True)
+            st.dataframe(styled_df, hide_index=True, use_container_width=True)
         else:
             raw_player_stats = sortedrank_hitter_data[sortedrank_hitter_data['Name'] == selected_player]
-            st.dataframe(raw_player_stats[['Rank', 'Name', 'Pos', 'Team', 'R', 'HR', 'RBI', 'SB', 'AVG']].style.format({
+            st.dataframe(raw_player_stats[['Rank', 'Name', 'Pos', 'Team', 'AB', 'R', 'HR', 'RBI', 'SB', 'AVG']].style.format({
                 "Rank": "{:.0f}",
                 "AVG": "{:.3f}",
             }), 
-            hide_index=True)
-
-# with tab2:
-#     st.subheader("🏆 Top 100 Pitchers (Z-Score Rankings)")
-#     if stat_type == "Z-Scores":
-#         zscore_cols = ['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']
-#         df = pitcher_z_scores_ranked.head(100)[['Rank', 'Name', 'Pos', 'Team', 'Total Z-Score'] + zscore_cols]
-#         df = df[[col for col in df.columns if col != 'Total Z-Score'] + ['Total Z-Score']]
-#         styled_df = df.style.applymap(color_z_scores, subset=zscore_cols)
-#         st.dataframe(styled_df, hide_index=True)
-#     else:
-#         st.dataframe(sortedrank_pitcher_data.head(100)[['Rank', 'Name', 'Pos', 'Team', 'W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']].style.format({
-#                 "ERA": "{:.2f}",
-#                 "WHIP": "{:.2f}"
-#             }), 
-#             hide_index=True)
-    
-#     st.subheader("🏆 Top 100 Hitters (Z-Score Rankings)")
-#     if stat_type == "Z-Scores":
-#         zscore_cols = ['R', 'HR', 'RBI', 'SB', 'AVG']
-#         df = hitter_z_scores_ranked.head(100)[['Rank', 'Name', 'Pos', 'Team', 'Total Z-Score'] + zscore_cols]
-#         df = df[[col for col in df.columns if col != 'Total Z-Score'] + ['Total Z-Score']]
-#         styled_df = df.style.applymap(color_z_scores, subset=zscore_cols)
-#         st.dataframe(styled_df, hide_index=True)
-#     else:
-#         st.dataframe(sortedrank_hitter_data.head(100)[['Rank', 'Name', 'Pos', 'Team','R', 'HR', 'RBI', 'SB', 'AVG']].style.format({
-#                 "Rank": "{:.0f}",
-#                 "AVG": "{:.3f}",
-#             }), 
-#             hide_index=True)
+            hide_index=True, use_container_width=True)
 
 with tab2:
     st.subheader("🏆 Top 100 Pitchers (Z-Score Rankings)")
@@ -358,15 +368,17 @@ with tab2:
 
     if stat_type == "Z-Scores":
         zscore_cols = ['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']
-        df = filtered_pitchers[['Rank', 'Name', 'Pos', 'Team', 'Total Z-Score'] + zscore_cols]
+        df = filtered_pitchers[['Rank', 'Name', 'Pos', 'Team', 'IP', 'Total Z-Score'] + zscore_cols]
         df = df[[col for col in df.columns if col != 'Total Z-Score'] + ['Total Z-Score']]
-        styled_df = df.style.applymap(color_z_scores, subset=zscore_cols)
-        st.dataframe(styled_df, hide_index=True)
+        styled_df = df.style.applymap(color_z_scores, subset=zscore_cols).format({
+                "IP": "{:.0f}",
+            })
+        st.dataframe(styled_df, hide_index=True, use_container_width=True)
     else:
-        st.dataframe(filtered_pitchers_raw[['Rank', 'Name', 'Pos', 'Team', 'W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']].style.format({
+        st.dataframe(filtered_pitchers_raw[['Rank', 'Name', 'Pos', 'Team', 'IP', 'W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']].style.format({
             "ERA": "{:.2f}",
             "WHIP": "{:.2f}"
-        }), hide_index=True)
+        }), hide_index=True, use_container_width=True)
 
     st.subheader("🏆 Top 100 Hitters (Z-Score Rankings)")
 
@@ -382,15 +394,15 @@ with tab2:
 
     if stat_type == "Z-Scores":
         zscore_cols = ['R', 'HR', 'RBI', 'SB', 'AVG']
-        df = filtered_hitters[['Rank', 'Name', 'Pos', 'Team', 'Total Z-Score'] + zscore_cols]
+        df = filtered_hitters[['Rank', 'Name', 'Pos', 'Team', 'AB', 'Total Z-Score'] + zscore_cols]
         df = df[[col for col in df.columns if col != 'Total Z-Score'] + ['Total Z-Score']]
         styled_df = df.style.applymap(color_z_scores, subset=zscore_cols)
-        st.dataframe(styled_df, hide_index=True)
+        st.dataframe(styled_df, hide_index=True, use_container_width=True)
     else:
-        st.dataframe(filtered_hitters_raw[['Rank', 'Name', 'Pos', 'Team', 'R', 'HR', 'RBI', 'SB', 'AVG']].style.format({
+        st.dataframe(filtered_hitters_raw[['Rank', 'Name', 'Pos', 'Team', 'AB', 'R', 'HR', 'RBI', 'SB', 'AVG']].style.format({
             "Rank": "{:.0f}",
             "AVG": "{:.3f}"
-        }), hide_index=True)
+        }), hide_index=True, use_container_width=True)
 
 with tab3:
     st.subheader("📊 Teams Overview (Pitchers & Hitters)")
@@ -403,31 +415,34 @@ with tab3:
         st.write("### Pitchers")
         if stat_type == "Z-Scores":
             zscore_cols = ['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']
-            display_cols = ['Rank', 'Name', 'Pos'] + zscore_cols + ['Total Z-Score']
-            styled_df = team_pitchers[display_cols].style.applymap(color_z_scores, subset=zscore_cols)
-            st.dataframe(styled_df, hide_index=True)
+            display_cols = ['Rank', 'Name', 'Pos', 'IP'] + zscore_cols + ['Total Z-Score']
+            styled_df = team_pitchers[display_cols].style.applymap(color_z_scores, subset=zscore_cols).format({
+                "IP": "{:.0f}",
+            })
+            st.dataframe(styled_df, hide_index=True, use_container_width=True)
         else:
             raw_player_stats = sortedrank_pitcher_data[sortedrank_pitcher_data['Team'] == selected_team]
-            st.dataframe(raw_player_stats[['Rank','Name', 'Pos', 'W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']].style.format({
+            st.dataframe(raw_player_stats[['Rank','Name', 'Pos', 'IP', 'W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']].style.format({
+                "IP": "{:.0f}",
                 "ERA": "{:.2f}",
                 "WHIP": "{:.2f}"
             }),
-            hide_index=True)
+            hide_index=True, use_container_width=True)
 
     if not team_hitters.empty:
         st.write("### Hitters")
         if stat_type == "Z-Scores":
             zscore_cols = ['R', 'HR', 'RBI', 'SB', 'AVG']
-            display_cols = ['Rank', 'Name', 'Pos'] + zscore_cols + ['Total Z-Score']
+            display_cols = ['Rank', 'Name', 'Pos', 'AB'] + zscore_cols + ['Total Z-Score']
             styled_df = team_hitters[display_cols].style.applymap(color_z_scores, subset=zscore_cols) 
-            st.dataframe(styled_df, hide_index=True)
+            st.dataframe(styled_df, hide_index=True, use_container_width=True)
         else:
             raw_player_stats = sortedrank_hitter_data[sortedrank_hitter_data['Team'] == selected_team]
-            st.dataframe(raw_player_stats[['Rank', 'Name', 'Pos','R', 'HR', 'RBI', 'SB', 'AVG']].style.format({
+            st.dataframe(raw_player_stats[['Rank', 'Name', 'Pos', 'AB', 'R', 'HR', 'RBI', 'SB', 'AVG']].style.format({
                 "Rank": "{:.0f}",
                 "AVG": "{:.3f}",
             }),
-            hide_index=True)
+            hide_index=True, use_container_width=True)
 
 with tab4:
     st.subheader("🎮 Create Your Fantasy Team")
@@ -455,5 +470,161 @@ with tab4:
                 "Rank": "{:.0f}",  # No decimals for Rank
             })
 
-        st.dataframe(styled_df, hide_index=True)
+        st.dataframe(styled_df, hide_index=True, use_container_width=True)
+
+with tab5:
+    st.subheader("🏅 Fantasy Team Rankings")
+
+    fantasy_teams = sorted(rosters_df['Fantasy Team'].unique())
+    selected_fantasy_team = st.selectbox("Select Fantasy Team:", fantasy_teams)
+
+    # --- Get player data ---
+    team_pitchers_raw = sortedrank_pitcher_data[sortedrank_pitcher_data['Fantasy Team'] == selected_fantasy_team]
+    team_hitters_raw = sortedrank_hitter_data[sortedrank_hitter_data['Fantasy Team'] == selected_fantasy_team]
+    team_pitchers_z = pitcher_z_scores_ranked[pitcher_z_scores_ranked['Fantasy Team'] == selected_fantasy_team]
+    team_hitters_z = hitter_z_scores_ranked[hitter_z_scores_ranked['Fantasy Team'] == selected_fantasy_team]
+
+    if stat_type == "Raw Stats":
+        import numpy as np
+        # Select and align columns
+        pitchers = team_pitchers_raw[['Rank', 'Name', 'Pos', 'Team', 'W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']].copy()
+        hitters = team_hitters_raw[['Rank', 'Name', 'Pos', 'Team', 'R', 'HR', 'RBI', 'SB', 'AVG']].copy()
+        pitchers = pitchers.reset_index(drop=True)
+        hitters = hitters.reset_index(drop=True)
+
+        for col in ['R', 'HR', 'RBI', 'SB', 'AVG']:
+            pitchers[col] = None
+        for col in ['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']:
+            hitters[col] = None
+
+        combined = pd.concat([pitchers, hitters], ignore_index=True)
+
+
+        # Total row
+        total_vals = {}
+        for col in ['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD', 'R', 'HR', 'RBI', 'SB', 'AVG']:
+            values = pd.to_numeric(combined[col], errors='coerce')
+            total_vals[col] = values.sum(skipna=True)
+
+        total_row = {**{col: "-" for col in ['Rank', 'Team', 'Pos']}, "Name": "TOTAL", **total_vals}
+        combined = pd.concat([combined, pd.DataFrame([total_row])], ignore_index=True)
+        combined = combined[combined['Rank'].notna() & combined['Pos'].notna()]
+
+        combined = combined.replace({None: np.nan})
+        def safe_format(f):
+            return lambda x: f"{x:.0f}" if isinstance(x, (int, float)) else x
+        st.dataframe(
+            combined.style.format({
+                "Rank": safe_format(float),
+                "W": "{:.0f}",
+                "ERA": "{:.2f}",
+                "WHIP": "{:.2f}",
+                "SO": "{:.0f}",
+                "SV": "{:.0f}",
+                "HLD": "{:.0f}",
+                "R": "{:.0f}",
+                "HR": "{:.0f}",
+                "RBI": "{:.0f}",
+                "SB": "{:.0f}",
+                "AVG": "{:.3f}",
+
+            }),
+            hide_index=True,
+            use_container_width=True
+        )
+
+    else:  # Z-Scores
+        pitchers = team_pitchers_z[['Rank', 'Name', 'Pos', 'Team', 'W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD', 'Total Z-Score']].copy()
+        hitters = team_hitters_z[['Rank', 'Name', 'Pos', 'Team', 'R', 'HR', 'RBI', 'SB', 'AVG', 'Total Z-Score']].copy()
+        pitchers = pitchers.reset_index(drop=True)
+        hitters = hitters.reset_index(drop=True)
+
+        for col in ['R', 'HR', 'RBI', 'SB', 'AVG']:
+            pitchers[col] = None
+        for col in ['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']:
+            hitters[col] = None
+
+        combinedz = pd.concat([pitchers, hitters], ignore_index=True)
+
+        # TEAM TOTAL row
+        totalz_vals = {}
+        for col in ['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD', 'R', 'HR', 'RBI', 'SB', 'AVG', 'Total Z-Score']:
+            values = pd.to_numeric(combinedz[col], errors='coerce')
+            totalz_vals[col] = values.sum(skipna=True)
+
+        totalz_row = {**{col: "-" for col in ['Rank', 'Team', 'Pos']}, "Name": "TEAM AVG", **totalz_vals}
+        combinedz = pd.concat([combinedz, pd.DataFrame([totalz_row])], ignore_index=True)
+
+        zscore_cols = ['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD', 'R', 'HR', 'RBI', 'SB', 'AVG']
+
+        # Skip styling last row
+        def apply_zscore_style(df):
+            styled = pd.DataFrame("", index=df.index, columns=df.columns)
+            for col in zscore_cols:
+                if col in df.columns:
+                    for i in df.index[:-1]:  # skip last row
+                        styled.loc[i, col] = color_z_scores(df.loc[i, col])
+            return styled
+
+        styled = combinedz.style.apply(apply_zscore_style, axis=None).format({
+            "W": "{:.4f}",
+            "ERA": "{:.4f}",
+            "WHIP": "{:.4f}",
+            "SO": "{:.4f}",
+            "SV": "{:.4f}",
+            "HLD": "{:.4f}",
+            "R": "{:.4f}",
+            "HR": "{:.4f}",
+            "RBI": "{:.4f}",
+            "SB": "{:.4f}",
+            "AVG": "{:.4f}",
+            "Total Z-Score": "{:.4f}"
+        })
+
+
+        st.dataframe(styled, hide_index=True, use_container_width=True)
+
+with tab6:
+    # Fantasy Team Rankings Summary
+    st.subheader("📈 Beisbol Rankings")
+    # --- Pitcher Aggregation ---
+    if stat_type == "Raw Stats":
+        pitcher_team_summary = pitcher_data.groupby("Fantasy Team")[['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']].sum()
+
+        team_er = pitcher_data.groupby("Fantasy Team")['ER'].sum()
+        team_ip = pitcher_data.groupby("Fantasy Team")['IP'].sum()
+        pitcher_team_summary['ERA'] = (team_er / team_ip) * 9
+
+        team_bb = pitcher_data.groupby("Fantasy Team")['BB'].sum()
+        team_ph = pitcher_data.groupby("Fantasy Team")['H'].sum()
+        pitcher_team_summary['WHIP'] = (team_bb+team_ph)/team_ip
+
+        hitter_team_summary = hitter_data.groupby("Fantasy Team")[['R', 'HR', 'RBI', 'SB', 'AVG']].sum()
+
+        team_hh = hitter_data.groupby("Fantasy Team")['H'].sum()
+        team_ab = hitter_data.groupby("Fantasy Team")['AB'].sum()
+        hitter_team_summary['AVG'] = team_hh/team_ab
+
+        # Combine the two
+        team_summary = pd.concat([pitcher_team_summary, hitter_team_summary], axis=1).fillna(0)
+        st.write("### Raw Stats by Fantasy Team")
+        st.dataframe(team_summary.style.format({
+            "ERA": "{:.2f}",
+            "WHIP": "{:.2f}",
+            "AVG": "{:.3f}"
+        }))
+    else:
+        # --- Z-score Aggregation ---
+        pitcher_z_summary = pitcher_z_scores.groupby("Fantasy Team")[['W', 'ERA', 'WHIP', 'SO', 'SV', 'HLD']].sum()
+        hitter_z_summary = hitter_z_scores.groupby("Fantasy Team")[['R', 'HR', 'RBI', 'SB', 'AVG']].sum()
+
+        team_z_summary = pd.concat([pitcher_z_summary, hitter_z_summary], axis=1).fillna(0)
+        team_z_summary['Total Z'] = team_z_summary.sum(axis=1)
+        team_z_summary = team_z_summary.sort_values(by='Total Z', ascending=False)
+
+        st.write("### Total Z-Scores by Fantasy Team")
+        st.dataframe(
+            team_z_summary.style.format("{:.4f}"),
+            use_container_width=True
+            )
 
