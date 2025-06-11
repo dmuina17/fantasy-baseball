@@ -2,4 +2,5 @@ streamlit
 pybaseball
 pandas
 numpy
+espn_api
 # add any other packages you're using (e.g., matplotlib, seaborn, etc.)
