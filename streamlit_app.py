@@ -465,10 +465,7 @@ with tab4:
         mask = selected_players["Name"] != "TOTAL"
         # Apply styling only to non-TOTAL rows, and exclude "Total Z-Score"
         styled_df = selected_players.style \
-            .applymap(lambda val: color_z_scores(val), subset=pd.IndexSlice[mask, zscore_cols]) \
-            .format({
-                "Rank": "{:.0f}",  # No decimals for Rank
-            })
+            .applymap(lambda val: color_z_scores(val), subset=pd.IndexSlice[mask, zscore_cols]) 
 
         st.dataframe(styled_df, hide_index=True, use_container_width=True)
 
